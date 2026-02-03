@@ -1,32 +1,35 @@
 import { create } from "zustand";
+import { supabase } from "../lib/supabase";
 
 type Role = "customer" | "vendor" | "delivery" | null;
 
 type AuthState = {
   isAuthenticated: boolean;
   role: Role;
-  token: string | null;
+  sessionLoaded: boolean;
 
-  login: (token: string, role: Role) => void;
-  logout: () => void;
+  setFromSupabase: (session: any, role: Role) => void;
+  signOut: () => Promise<void>;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
   role: null,
-  token: null,
+  sessionLoaded: false,
 
-  login: (token, role) =>
+  setFromSupabase: (session, role) =>
     set({
-      isAuthenticated: true,
-      token,
+      isAuthenticated: !!session,
       role,
+      sessionLoaded: true,
     }),
 
-  logout: () =>
+  signOut: async () => {
+    await supabase.auth.signOut();
     set({
       isAuthenticated: false,
-      token: null,
       role: null,
-    }),
+      sessionLoaded: true,
+    });
+  },
 }));

@@ -1,43 +1,64 @@
 import { Slot, router } from "expo-router";
-import { useEffect, useState } from "react";
-import { Button, View } from "react-native";
+import { useEffect } from "react";
+import { supabase } from "../src/lib/supabase";
 import { useAuthStore } from "../src/store/authStore";
 
 export default function RootLayout() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const role = useAuthStore((s) => s.role);
-  const [mounted, setMounted] = useState(false);
+  const { isAuthenticated, role, sessionLoaded, setFromSupabase } =
+    useAuthStore();
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
+    let isMounted = true;
 
-  useEffect(() => {
-    if (!mounted) return;
-
-    const navigate = () => {
-      if (!isAuthenticated) {
-        router.replace("/auth/login");
+    const syncSession = async (session: any) => {
+      if (!session) {
+        if (isMounted) setFromSupabase(null, null);
         return;
       }
 
-      if (role === "customer") {
-        router.replace("/customer");
-      } else if (role === "vendor") {
-        router.replace("/vendor" as any);
-      } else if (role === "delivery") {
-        router.replace("/delivery" as any);
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .single();
+
+      if (error) {
+        console.error("Profile fetch error:", error);
+        if (isMounted) setFromSupabase(null, null);
+        return;
       }
+
+      if (isMounted) setFromSupabase(session, profile.role);
     };
 
-    // Delay navigation to ensure Slot is mounted
-    setTimeout(navigate, 0);
-  }, [isAuthenticated, role, mounted]);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      syncSession(session);
+    });
 
-  return (
-    <>
-      <Slot />
-    </>
-  );
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        syncSession(session);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!sessionLoaded) return;
+
+    if (!isAuthenticated) {
+      router.replace("/auth/login");
+      return;
+    }
+
+    if (role === "customer") router.replace("/customer");
+    else if (role === "vendor") router.replace("/vendor");
+    else if (role === "delivery") router.replace("/delivery");
+  }, [sessionLoaded, isAuthenticated, role]);
+
+  return <Slot />;
 }
-
